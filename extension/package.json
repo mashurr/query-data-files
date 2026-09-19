@@ -2,8 +2,9 @@
   "name": "query-data-files",
   "displayName": "Query Data Files",
   "description": "Query CSV, Parquet, JSON, SQLite and Excel files with SQL, a visual query builder or charts. Powered by DuckDB.",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "mashurr",
+  "icon": "icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",
