@@ -1,0 +1,282 @@
+{
+  "name": "query-data-files",
+  "displayName": "Query Data Files",
+  "description": "Query CSV, Parquet, JSON, SQLite and Excel files with SQL, a visual query builder or charts. Powered by DuckDB.",
+  "version": "0.1.0",
+  "publisher": "mashurr",
+  "icon": "icon.png",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mashurr/query-data-files.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Data Science",
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "csv",
+    "parquet",
+    "sqlite",
+    "excel",
+    "sql",
+    "duckdb",
+    "data",
+    "query",
+    "table viewer",
+    "chart"
+  ],
+  "main": "./out/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Data files open for viewing. Queries from .sql files and saved query flows only run once you trust the workspace."
+    }
+  },
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "queryDataFiles.data",
+        "displayName": "Query Data Files",
+        "selector": [
+          {
+            "filenamePattern": "*.parquet"
+          },
+          {
+            "filenamePattern": "*.xlsx"
+          },
+          {
+            "filenamePattern": "*.sqlite"
+          },
+          {
+            "filenamePattern": "*.sqlite3"
+          },
+          {
+            "filenamePattern": "*.duckdb"
+          }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "queryDataFiles.text",
+        "displayName": "Query Data Files",
+        "selector": [
+          {
+            "filenamePattern": "*.csv"
+          },
+          {
+            "filenamePattern": "*.tsv"
+          },
+          {
+            "filenamePattern": "*.json"
+          },
+          {
+            "filenamePattern": "*.jsonl"
+          },
+          {
+            "filenamePattern": "*.ndjson"
+          },
+          {
+            "filenamePattern": "*.db"
+          }
+        ],
+        "priority": "option"
+      },
+      {
+        "viewType": "queryDataFiles.flow",
+        "displayName": "Query Builder",
+        "selector": [
+          {
+            "filenamePattern": "*.qflow.json"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "queryDataFiles.open",
+        "title": "Open in Query Data Files",
+        "category": "Query Data Files",
+        "icon": "$(table)"
+      },
+      {
+        "command": "queryDataFiles.restartEngine",
+        "title": "Restart Engine",
+        "category": "Query Data Files"
+      },
+      {
+        "command": "queryDataFiles.runQuery",
+        "title": "Run Query",
+        "category": "Query Data Files",
+        "icon": "$(play)",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "queryDataFiles.newQuery",
+        "title": "New SQL Query",
+        "category": "Query Data Files",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "queryDataFiles.refreshFiles",
+        "title": "Refresh",
+        "category": "Query Data Files",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "queryDataFiles.copyPath",
+        "title": "Copy Relative Path",
+        "category": "Query Data Files"
+      },
+      {
+        "command": "queryDataFiles.copyName",
+        "title": "Copy Name",
+        "category": "Query Data Files"
+      },
+      {
+        "command": "queryDataFiles.newFlow",
+        "title": "New Query Flow",
+        "category": "Query Data Files",
+        "icon": "$(type-hierarchy)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "queryDataFiles.open",
+          "when": "resourceExtname =~ /^\\.(csv|tsv|json|jsonl|ndjson|db)$/ && activeCustomEditorId != queryDataFiles.text",
+          "group": "navigation"
+        },
+        {
+          "command": "queryDataFiles.runQuery",
+          "when": "resourceLangId == sql",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "queryDataFiles.open",
+          "when": "resourceExtname =~ /^\\.(csv|tsv|json|jsonl|ndjson|db|parquet|xlsx|sqlite|sqlite3|duckdb)$/",
+          "group": "navigation@9"
+        },
+        {
+          "command": "queryDataFiles.newFlow",
+          "when": "resourceExtname =~ /^\\.(csv|tsv|json|jsonl|ndjson|db|parquet|xlsx|sqlite|sqlite3|duckdb)$/",
+          "group": "navigation@9"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "queryDataFiles.open",
+          "when": "resourceExtname =~ /^\\.(csv|tsv|json|jsonl|ndjson|db|parquet|xlsx|sqlite|sqlite3|duckdb)$/"
+        },
+        {
+          "command": "queryDataFiles.copyPath",
+          "when": "false"
+        },
+        {
+          "command": "queryDataFiles.copyName",
+          "when": "false"
+        },
+        {
+          "command": "queryDataFiles.refreshFiles",
+          "when": "false"
+        },
+        {
+          "command": "queryDataFiles.runQuery",
+          "when": "editorLangId == sql"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "queryDataFiles.newQuery",
+          "when": "view == queryDataFiles.files",
+          "group": "navigation@1"
+        },
+        {
+          "command": "queryDataFiles.newFlow",
+          "when": "view == queryDataFiles.files",
+          "group": "navigation@1"
+        },
+        {
+          "command": "queryDataFiles.refreshFiles",
+          "when": "view == queryDataFiles.files",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "queryDataFiles.newQuery",
+          "when": "view == queryDataFiles.files && viewItem =~ /^data(File|Table)$/",
+          "group": "inline"
+        },
+        {
+          "command": "queryDataFiles.newQuery",
+          "when": "view == queryDataFiles.files && viewItem =~ /^data(File|Table)$/",
+          "group": "1_query@1"
+        },
+        {
+          "command": "queryDataFiles.newFlow",
+          "when": "view == queryDataFiles.files && viewItem == dataFile",
+          "group": "1_query@2"
+        },
+        {
+          "command": "queryDataFiles.copyPath",
+          "when": "view == queryDataFiles.files && viewItem == dataFile",
+          "group": "2_copy@1"
+        },
+        {
+          "command": "queryDataFiles.copyName",
+          "when": "view == queryDataFiles.files && viewItem =~ /^data(Table|Column)$/",
+          "group": "2_copy@2"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "queryDataFiles.runQuery",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "editorLangId == sql && editorTextFocus && !suggestWidgetVisible && isWorkspaceTrusted"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "queryDataFiles.files",
+          "name": "Data Files",
+          "icon": "$(table)",
+          "contextualTitle": "Query Data Files"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "queryDataFiles.files",
+        "contents": "No data files in this workspace.\nQuery Data Files lists CSV, TSV, Parquet, JSON Lines, Excel, SQLite and DuckDB files here.\n[New SQL Query](command:queryDataFiles.newQuery)\n[New Query Flow](command:queryDataFiles.newFlow)"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run typecheck && node esbuild.mjs --production",
+    "compile": "npm run typecheck && node esbuild.mjs",
+    "typecheck": "tsc -p . && tsc -p webview",
+    "watch": "node esbuild.mjs --watch",
+    "lint": "eslint src webview"
+  },
+  "devDependencies": {
+    "@types/node": "20.x",
+    "@types/vscode": "^1.90.0",
+    "@uwdata/flechette": "^2.5.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.2",
+    "eslint": "^9.25.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.0"
+  }
+}
