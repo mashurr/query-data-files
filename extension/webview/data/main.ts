@@ -153,9 +153,6 @@ class App {
         this.picker.setAttribute('aria-label', file?.format === 'xlsx' ? 'Sheet' : 'Table');
         this.picker.replaceChildren(...(options ?? []).map(o => h('option', { value: o, text: o })));
         if (current) { this.picker.value = current; }
-        if (file && file.source === null && !file.tables?.length && file.format !== 'xlsx' && (file.format === 'sqlite' || file.format === 'duckdb')) {
-            this.showProblem('This database has no tables.');
-        }
     }
 
     private showProblem(text: string) {
@@ -265,7 +262,7 @@ class App {
                 const columns = peek.result.columns as Column[];
                 const sameColumns = this.shown?.result.columns.map(c => c.name).join('\n') === columns.map(c => c.name).join('\n');
                 this.grid.setData({ columns, types: decoded.types, rows: decoded.rows, first: decoded }, sameColumns);
-                this.meta.textContent = `${columns.length} columns · counting rows…`;
+                this.meta.textContent = `${formatCount(columns.length)} columns · counting rows…`;
                 peeked = true;
             }
         }
@@ -296,7 +293,7 @@ class App {
             fetch: result.direct ? undefined : offset => this.fetchPage(offset),
         }, sameColumns);
         this.grid.setSort(this.refine.sort ? result.columns.findIndex(c => c.name === this.refine.sort!.column) : undefined, !!this.refine.sort?.descending);
-        this.meta.textContent = `${formatCount(result.rows)} row${result.rows === 1 ? '' : 's'} · ${result.columns.length} column${result.columns.length === 1 ? '' : 's'}`;
+        this.meta.textContent = `${formatCount(result.rows)} row${result.rows === 1 ? '' : 's'} · ${formatCount(result.columns.length)} column${result.columns.length === 1 ? '' : 's'}`;
         this.status.textContent = `${formatMs(result.ms)}${result.truncated ? ` · first ${formatCount(decoded.rows)} rows shown` : ''}`;
         this.exportButton.disabled = result.direct;
 

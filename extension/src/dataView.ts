@@ -155,6 +155,7 @@ export class DataView implements EngineClient, vscode.Disposable {
             return;
         }
         const r = reply.result as Partial<OpenedFile>;
+        if (!r.source) { this.problem = 'This database has no tables.'; }
         this.file = {
             name: path.basename(file), path: file, format, source: (r.source as string | null) ?? null,
             tables: r.tables, table: r.table, sheets: r.sheets, sheet: r.sheet, alias: r.alias,

@@ -19,6 +19,9 @@ export const PAGE_ROWS = 200;
 const OVERSCAN_ROWS = 12;
 const OVERSCAN_PX = 300;
 const MAX_PAINTED_ROWS = 400;
+// Browsers can't scroll an element taller than about 33 million pixels (1.5 million rows).
+// Past this height the scrollbar position maps proportionally onto the rows instead.
+const MAX_BODY_PX = 8_000_000;
 
 export interface GridData {
     columns: Column[];
@@ -155,11 +158,44 @@ export class Grid {
         for (const w of this.widths) { this.offsets.push(x); x += w; }
         const rows = this.data?.rows ?? 0;
         this.sizer.style.width = `${x}px`;
-        this.sizer.style.height = `${this.headerHeight() + rows * ROW_HEIGHT}px`;
+        this.sizer.style.height = `${this.headerHeight() + this.bodyHeight()}px`;
         this.header.style.height = `${this.headerHeight()}px`;
         this.body.style.top = `${this.headerHeight()}px`;
-        this.body.style.height = `${rows * ROW_HEIGHT}px`;
+        this.body.style.height = `${this.bodyHeight()}px`;
         this.schedule();
+    }
+
+    private bodyHeight(): number {
+        return Math.min((this.data?.rows ?? 0) * ROW_HEIGHT, MAX_BODY_PX);
+    }
+
+    private scaled(): boolean {
+        return (this.data?.rows ?? 0) * ROW_HEIGHT > MAX_BODY_PX;
+    }
+
+    /** Rows that fit on screen, and how far the body can scroll */
+    private viewport() {
+        const visible = Math.max(1, Math.floor((this.scroller.clientHeight - this.headerHeight()) / ROW_HEIGHT));
+        const maxScroll = Math.max(1, this.bodyHeight() - (this.scroller.clientHeight - this.headerHeight()));
+        return { visible, maxScroll };
+    }
+
+    /** The (fractional) row at the top of the screen */
+    private topRow(): number {
+        const top = Math.max(0, this.scroller.scrollTop);
+        if (!this.scaled()) { return top / ROW_HEIGHT; }
+        const { visible, maxScroll } = this.viewport();
+        return Math.min(1, top / maxScroll) * Math.max(0, (this.data?.rows ?? 0) - visible);
+    }
+
+    private rowY(row: number): number {
+        return this.scaled() ? Math.max(0, this.scroller.scrollTop) + (row - this.topRow()) * ROW_HEIGHT : row * ROW_HEIGHT;
+    }
+
+    private scrollToRow(row: number) {
+        if (!this.scaled()) { this.scroller.scrollTop = row * ROW_HEIGHT; return; }
+        const { visible, maxScroll } = this.viewport();
+        this.scroller.scrollTop = row / Math.max(1, (this.data?.rows ?? 0) - visible) * maxScroll;
     }
 
     private schedule() {
@@ -211,15 +247,15 @@ export class Grid {
     private paintBody() {
         const data = this.data;
         if (!data) { this.body.replaceChildren(); return; }
-        const top = Math.max(0, this.scroller.scrollTop - this.headerHeight());
-        const first = Math.max(0, Math.floor(top / ROW_HEIGHT) - OVERSCAN_ROWS);
+        const topRow = this.topRow();
+        const first = Math.max(0, Math.floor(topRow) - OVERSCAN_ROWS);
         // Capped in case the grid's box isn't sized yet and reports its full content height
-        const last = Math.min(data.rows, Math.ceil((top + this.scroller.clientHeight) / ROW_HEIGHT) + OVERSCAN_ROWS, first + MAX_PAINTED_ROWS);
+        const last = Math.min(data.rows, Math.ceil(topRow + this.scroller.clientHeight / ROW_HEIGHT) + OVERSCAN_ROWS, first + MAX_PAINTED_ROWS);
         const columns = this.visibleColumns();
         const rows: HTMLElement[] = [];
         for (let r = first; r < last; r++) {
             const page = this.page(r);
-            const row = h('div', { className: 'row', role: 'row', 'data-row': r, style: `top:${r * ROW_HEIGHT}px` },
+            const row = h('div', { className: 'row', role: 'row', 'data-row': r, style: `top:${this.rowY(r)}px` },
                 h('div', { className: 'cell number', text: (r + 1).toLocaleString('en-US') }));
             for (const c of columns) {
                 const cell = h('div', {
@@ -330,10 +366,11 @@ export class Grid {
     }
 
     private reveal(row: number, column: number) {
-        const top = this.headerHeight() + row * ROW_HEIGHT;
         const s = this.scroller;
-        if (top - this.headerHeight() < s.scrollTop) { s.scrollTop = top - this.headerHeight(); }
-        if (top + ROW_HEIGHT > s.scrollTop + s.clientHeight) { s.scrollTop = top + ROW_HEIGHT - s.clientHeight; }
+        const { visible } = this.viewport();
+        const topRow = this.topRow();
+        if (row < topRow) { this.scrollToRow(row); }
+        if (row >= topRow + visible) { this.scrollToRow(row - visible + 1); }
         const left = this.offsets[column], right = left + this.widths[column];
         if (left - NUMBER_WIDTH < s.scrollLeft) { s.scrollLeft = left - NUMBER_WIDTH; }
         if (right > s.scrollLeft + s.clientWidth) { s.scrollLeft = right - s.clientWidth; }
