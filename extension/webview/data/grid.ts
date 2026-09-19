@@ -19,6 +19,7 @@ export const PAGE_ROWS = 200;
 const OVERSCAN_ROWS = 12;
 const OVERSCAN_PX = 300;
 const MAX_PAINTED_ROWS = 400;
+const PAINT_FALLBACK_MS = 100;
 // Browsers can't scroll an element taller than about 33 million pixels (1.5 million rows).
 // Past this height the scrollbar position maps proportionally onto the rows instead.
 const MAX_BODY_PX = 8_000_000;
@@ -32,6 +33,8 @@ export interface GridData {
     fetch?: (offset: number) => Promise<Decoded | undefined>;
     /** This many leading columns carry data for `decorate` and aren't shown */
     hidden?: number;
+    /** Room for two values per cell, e.g. an old and a new one */
+    wide?: boolean;
     /** Styles a row and its cells after they're filled, e.g. to mark changes */
     decorate?: (row: HTMLElement, cells: Map<number, HTMLElement>, value: (column: number) => unknown) => void;
 }
@@ -60,6 +63,7 @@ export class Grid {
     private sort: { column: number; descending: boolean } | undefined;
     private selected: { row: number; column: number } | undefined;
     private frame = 0;
+    private fallback = 0;
     private generation = 0;
     private readonly header: HTMLElement;
     private readonly body: HTMLElement;
@@ -100,7 +104,8 @@ export class Grid {
         this.pages.clear();
         this.pages.set(0, { columns: data.first.columns });
         if (!sameColumns) {
-            this.widths = data.columns.map((c, i) => i < (data.hidden ?? 0) ? 0 : this.autoWidth(c, data.types[i], data.first.columns[i] ?? []));
+            this.widths = data.columns.map((c, i) => i < (data.hidden ?? 0) ? 0
+                : Math.min(MAX_AUTO_WIDTH, this.autoWidth(c, data.types[i], data.first.columns[i] ?? []) * (data.wide ? 1.8 : 1)));
             this.profiles = [];
             this.selected = undefined;
             this.scroller.scrollTop = 0;
@@ -202,9 +207,18 @@ export class Grid {
         this.scroller.scrollTop = row / Math.max(1, (this.data?.rows ?? 0) - visible) * maxScroll;
     }
 
+    /** Paints on the next frame, or after a moment if frames are paused (a window the browser thinks is hidden) */
     private schedule() {
         if (this.frame) { return; }
-        this.frame = requestAnimationFrame(() => { this.frame = 0; this.paint(); });
+        const run = () => {
+            if (!this.frame) { return; }
+            cancelAnimationFrame(this.frame);
+            clearTimeout(this.fallback);
+            this.frame = 0;
+            this.paint();
+        };
+        this.frame = requestAnimationFrame(run);
+        this.fallback = window.setTimeout(run, PAINT_FALLBACK_MS);
     }
 
     private visibleColumns(): number[] {
@@ -232,7 +246,10 @@ export class Grid {
             const title = h('button', { className: 'hname', title: `${col.name} (${col.type}). Click to sort, right-click for more.` },
                 h('span', { className: 'name', text: col.name }),
                 h('span', { className: 'sort', text: sorted }));
-            title.addEventListener('click', () => this.actions.headerClick(i));
+            // Mouse sorting fires on press: the header can redraw (profiles arriving) before the release,
+            // which would swallow a click. Enter and Space still work through click.
+            title.addEventListener('mousedown', e => { if (e.button === 0) { e.preventDefault(); this.actions.headerClick(i); } });
+            title.addEventListener('click', e => { if (e.detail === 0) { this.actions.headerClick(i); } });
             const cell = h('div', {
                 className: `hcell${isNumericType(data.types[i]) ? ' numeric' : ''}`,
                 role: 'columnheader', 'data-col': i,

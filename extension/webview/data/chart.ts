@@ -55,7 +55,9 @@ function categoryLike(c: Column, profile: Profile | undefined): boolean {
 export function resolve(settings: ChartSettings, columns: Column[], profiles: (Profile | undefined)[]): Resolved | undefined {
     const byName = (name?: string) => columns.find(c => c.name === name);
     const numbers = columns.filter(c => kindOf(c.type) === 'number');
-    const measures = numbers.filter(c => !isIdLike(c.name));
+    // Money-like names make better defaults than counts such as quantity
+    const measureName = /(amount|revenue|sales|total|price|value|cost|profit|spend|income)/i;
+    const measures = numbers.filter(c => !isIdLike(c.name)).sort((a, b) => Number(!measureName.test(a.name)) - Number(!measureName.test(b.name)));
     const times = columns.filter(c => kindOf(c.type) === 'time');
     const categories = columns.filter((c, i) => categoryLike(c, profiles[i]));
     const measure = measures[0] ?? numbers[0];

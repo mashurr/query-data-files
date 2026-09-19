@@ -154,7 +154,7 @@ ORDER BY coalesce(b.${k}, a.${k})`;
         const columns = (reply.result.columns as Column[]);
         const beforeType = first.types[2];
         this.grid.setData({
-            columns, types: first.types, rows: Number(reply.result.rows), first, hidden: HIDDEN,
+            columns, types: first.types, rows: Number(reply.result.rows), first, hidden: HIDDEN, wide: true,
             fetch: async offset => {
                 const page = await engine('diff', 'page', { name: 'diff_view', offset, limit: PAGE_ROWS });
                 return page.ok ? decode(page.body) : undefined;

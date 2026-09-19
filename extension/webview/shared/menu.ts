@@ -9,6 +9,9 @@ export interface MenuItem {
 }
 
 let open: HTMLElement | undefined;
+let openedAt = 0;
+// Focusing the menu can briefly blur the webview's window; that blur shouldn't close it
+const BLUR_GRACE_MS = 250;
 
 export function closeMenu() {
     open?.remove();
@@ -32,6 +35,7 @@ export function showMenu(x: number, y: number, items: (MenuItem | 'separator')[]
     menu.style.left = `${Math.max(4, Math.min(x, window.innerWidth - rect.width - 4))}px`;
     menu.style.top = `${Math.max(4, Math.min(y, window.innerHeight - rect.height - 4))}px`;
     open = menu;
+    openedAt = performance.now();
     (menu.querySelector('button:not([disabled])') as HTMLButtonElement | null)?.focus();
     menu.addEventListener('keydown', e => {
         const buttons = [...menu.querySelectorAll<HTMLButtonElement>('button:not([disabled])')];
@@ -43,4 +47,4 @@ export function showMenu(x: number, y: number, items: (MenuItem | 'separator')[]
 
 window.addEventListener('keydown', e => { if (e.key === 'Escape') { closeMenu(); } });
 window.addEventListener('mousedown', e => { if (open && !open.contains(e.target as Node)) { closeMenu(); } }, true);
-window.addEventListener('blur', closeMenu);
+window.addEventListener('blur', () => { if (performance.now() - openedAt > BLUR_GRACE_MS) { closeMenu(); } });
