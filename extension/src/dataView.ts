@@ -20,7 +20,7 @@ let nextViewId = 1;
 
 export type ViewSource =
     | { kind: 'file'; uri: vscode.Uri }
-    | { kind: 'sql'; title: string; sql: string; folder?: vscode.Uri };
+    | { kind: 'sql'; title: string; sql: string; setup?: string[]; folder?: vscode.Uri };
 
 /** One table view in a webview: a data file opened as `this`, or the results of a .sql file */
 export class DataView implements EngineClient, vscode.Disposable {
@@ -30,7 +30,7 @@ export class DataView implements EngineClient, vscode.Disposable {
     private ready = false;
     private readonly disposables: vscode.Disposable[] = [];
     private readonly lanesUsed = new Set<Lane>(['main']);
-    private readonly resultNames = new Set<string>();
+    private readonly resultNames = new Set<string>([this.resultName('setup')]);
     private changeTimer: NodeJS.Timeout | undefined;
     private disposed = false;
 
@@ -61,11 +61,24 @@ export class DataView implements EngineClient, vscode.Disposable {
     }
 
     /** Shows new SQL, e.g. when a .sql file runs again into the same results view */
-    run(sql: string, title: string) {
+    async run(sql: string, title: string, setup: string[] = []) {
         if (this.source.kind === 'sql') {
-            this.source = { ...this.source, sql, title };
+            this.source = { ...this.source, sql, title, setup };
         }
+        await this.runSetup(setup);
         this.post({ type: 'run', sql });
+    }
+
+    /** Statements before the last one in a selection (ATTACH, CREATE TEMP TABLE…) run first, on the same connection */
+    private async runSetup(statements: string[]) {
+        for (const sql of statements) {
+            const reply = await this.engine.request('query', { sql, name: this.resultName('setup') }, this.session('main'))
+                .catch(err => ({ ok: false as const, error: { kind: 'crashed' as const, message: String(err instanceof Error ? err.message : err) } }));
+            if (!reply.ok) {
+                vscode.window.showErrorMessage(`A statement before the query failed: ${reply.error.message}`);
+                return;
+            }
+        }
     }
 
     /** Result tables are shared by every view in the engine, so names carry the view's id */
@@ -132,6 +145,7 @@ export class DataView implements EngineClient, vscode.Disposable {
                 file: this.file, sql: 'SELECT * FROM this', problem: this.problem,
             };
         } else {
+            await this.runSetup(this.source.setup ?? []);
             init = { type: 'init', kind: 'sql', title: this.source.title, sql: this.source.sql };
         }
         this.post(init);

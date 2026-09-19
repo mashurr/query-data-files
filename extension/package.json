@@ -42,11 +42,21 @@
         "viewType": "queryDataFiles.data",
         "displayName": "Query Data Files",
         "selector": [
-          { "filenamePattern": "*.parquet" },
-          { "filenamePattern": "*.xlsx" },
-          { "filenamePattern": "*.sqlite" },
-          { "filenamePattern": "*.sqlite3" },
-          { "filenamePattern": "*.duckdb" }
+          {
+            "filenamePattern": "*.parquet"
+          },
+          {
+            "filenamePattern": "*.xlsx"
+          },
+          {
+            "filenamePattern": "*.sqlite"
+          },
+          {
+            "filenamePattern": "*.sqlite3"
+          },
+          {
+            "filenamePattern": "*.duckdb"
+          }
         ],
         "priority": "default"
       },
@@ -54,12 +64,24 @@
         "viewType": "queryDataFiles.text",
         "displayName": "Query Data Files",
         "selector": [
-          { "filenamePattern": "*.csv" },
-          { "filenamePattern": "*.tsv" },
-          { "filenamePattern": "*.json" },
-          { "filenamePattern": "*.jsonl" },
-          { "filenamePattern": "*.ndjson" },
-          { "filenamePattern": "*.db" }
+          {
+            "filenamePattern": "*.csv"
+          },
+          {
+            "filenamePattern": "*.tsv"
+          },
+          {
+            "filenamePattern": "*.json"
+          },
+          {
+            "filenamePattern": "*.jsonl"
+          },
+          {
+            "filenamePattern": "*.ndjson"
+          },
+          {
+            "filenamePattern": "*.db"
+          }
         ],
         "priority": "option"
       }
@@ -75,6 +97,35 @@
         "command": "queryDataFiles.restartEngine",
         "title": "Restart Engine",
         "category": "Query Data Files"
+      },
+      {
+        "command": "queryDataFiles.runQuery",
+        "title": "Run Query",
+        "category": "Query Data Files",
+        "icon": "$(play)",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "queryDataFiles.newQuery",
+        "title": "New SQL Query",
+        "category": "Query Data Files",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "queryDataFiles.refreshFiles",
+        "title": "Refresh",
+        "category": "Query Data Files",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "queryDataFiles.copyPath",
+        "title": "Copy Relative Path",
+        "category": "Query Data Files"
+      },
+      {
+        "command": "queryDataFiles.copyName",
+        "title": "Copy Name",
+        "category": "Query Data Files"
       }
     ],
     "menus": {
@@ -82,6 +133,11 @@
         {
           "command": "queryDataFiles.open",
           "when": "resourceExtname =~ /^\\.(csv|tsv|json|jsonl|ndjson|db)$/ && activeCustomEditorId != queryDataFiles.text",
+          "group": "navigation"
+        },
+        {
+          "command": "queryDataFiles.runQuery",
+          "when": "resourceLangId == sql",
           "group": "navigation"
         }
       ],
@@ -96,9 +152,83 @@
         {
           "command": "queryDataFiles.open",
           "when": "resourceExtname =~ /^\\.(csv|tsv|json|jsonl|ndjson|db|parquet|xlsx|sqlite|sqlite3|duckdb)$/"
+        },
+        {
+          "command": "queryDataFiles.copyPath",
+          "when": "false"
+        },
+        {
+          "command": "queryDataFiles.copyName",
+          "when": "false"
+        },
+        {
+          "command": "queryDataFiles.refreshFiles",
+          "when": "false"
+        },
+        {
+          "command": "queryDataFiles.runQuery",
+          "when": "editorLangId == sql"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "queryDataFiles.newQuery",
+          "when": "view == queryDataFiles.files",
+          "group": "navigation@1"
+        },
+        {
+          "command": "queryDataFiles.refreshFiles",
+          "when": "view == queryDataFiles.files",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "queryDataFiles.newQuery",
+          "when": "view == queryDataFiles.files && viewItem =~ /^data(File|Table)$/",
+          "group": "inline"
+        },
+        {
+          "command": "queryDataFiles.newQuery",
+          "when": "view == queryDataFiles.files && viewItem =~ /^data(File|Table)$/",
+          "group": "1_query@1"
+        },
+        {
+          "command": "queryDataFiles.copyPath",
+          "when": "view == queryDataFiles.files && viewItem == dataFile",
+          "group": "2_copy@1"
+        },
+        {
+          "command": "queryDataFiles.copyName",
+          "when": "view == queryDataFiles.files && viewItem =~ /^data(Table|Column)$/",
+          "group": "2_copy@2"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "queryDataFiles.runQuery",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "editorLangId == sql && editorTextFocus && !suggestWidgetVisible && isWorkspaceTrusted"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "queryDataFiles.files",
+          "name": "Data Files",
+          "icon": "$(table)",
+          "contextualTitle": "Query Data Files"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "queryDataFiles.files",
+        "contents": "No data files in this workspace.\nQuery Data Files lists CSV, TSV, Parquet, JSON Lines, Excel, SQLite and DuckDB files here.\n[New SQL Query](command:queryDataFiles.newQuery)"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run typecheck && node esbuild.mjs --production",

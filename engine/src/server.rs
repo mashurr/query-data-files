@@ -331,6 +331,11 @@ fn handle(conn: &Connection, request: &Request, attached: &Mutex<Attached>) -> R
             let names = xlsx::sheet_names(str_param(p, "path")?).map_err(bad_request)?;
             Ok((json!({ "sheets": names }), Vec::new()))
         }
+        "describe" => {
+            let sql = trim_statement(str_param(p, "sql")?);
+            let columns = describe(conn, &format!("(\n{sql}\n)"))?;
+            Ok((json!({ "columns": columns }), Vec::new()))
+        }
         "ping" => Ok((json!({}), Vec::new())),
         other => Err(bad_request(format!("Unknown method {other}"))),
     }
