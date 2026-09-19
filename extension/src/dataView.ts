@@ -4,7 +4,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Engine, EngineClient } from './engine';
 import { formatOf } from './formats';
-import { HostMessage, Lane, OpenedFile, ViewInit, ViewMessage } from './shared/protocol';
+import { HostMessage, OpenedFile, ViewInit, ViewMessage } from './shared/protocol';
+import { ViewEngine } from './viewEngine';
 
 // Changes on disk are picked up once the file has been quiet this long
 const DISK_CHANGE_MS = 500;
@@ -16,21 +17,17 @@ const EXPORT_FILTERS: Record<string, Record<string, string[]>> = {
     xlsx: { 'Excel workbook': ['xlsx'] },
 };
 
-let nextViewId = 1;
-
 export type ViewSource =
     | { kind: 'file'; uri: vscode.Uri }
     | { kind: 'sql'; title: string; sql: string; setup?: string[]; folder?: vscode.Uri };
 
 /** One table view in a webview: a data file opened as `this`, or the results of a .sql file */
 export class DataView implements EngineClient, vscode.Disposable {
-    readonly id = `v${nextViewId++}`;
+    private readonly lanes: ViewEngine;
     private file: OpenedFile | undefined;
     private problem: string | undefined;
     private ready = false;
     private readonly disposables: vscode.Disposable[] = [];
-    private readonly lanesUsed = new Set<Lane>(['main']);
-    private readonly resultNames = new Set<string>([this.resultName('setup')]);
     private changeTimer: NodeJS.Timeout | undefined;
     private disposed = false;
 
@@ -45,7 +42,9 @@ export class DataView implements EngineClient, vscode.Disposable {
             localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'out'), vscode.Uri.joinPath(context.extensionUri, 'media')],
         };
         webview.html = this.html();
+        this.lanes = new ViewEngine(engine);
         this.disposables.push(
+            this.lanes,
             webview.onDidReceiveMessage((m: ViewMessage) => this.receive(m)),
             engine.register(this),
         );
@@ -72,22 +71,12 @@ export class DataView implements EngineClient, vscode.Disposable {
     /** Statements before the last one in a selection (ATTACH, CREATE TEMP TABLE…) run first, on the same connection */
     private async runSetup(statements: string[]) {
         for (const sql of statements) {
-            const reply = await this.engine.request('query', { sql, name: this.resultName('setup') }, this.session('main'))
-                .catch(err => ({ ok: false as const, error: { kind: 'crashed' as const, message: String(err instanceof Error ? err.message : err) } }));
+            const reply = await this.lanes.request('main', 'query', { sql, name: 'setup' });
             if (!reply.ok) {
                 vscode.window.showErrorMessage(`A statement before the query failed: ${reply.error.message}`);
                 return;
             }
         }
-    }
-
-    /** Result tables are shared by every view in the engine, so names carry the view's id */
-    private resultName(name: unknown): string {
-        return `${this.id}_${typeof name === 'string' ? name : 'result'}`;
-    }
-
-    private session(lane: Lane): string {
-        return lane === 'main' ? this.id : `${this.id}:${lane}`;
     }
 
     private post(message: HostMessage) {
@@ -100,22 +89,11 @@ export class DataView implements EngineClient, vscode.Disposable {
                 this.ready = true;
                 await this.sendInit();
                 break;
-            case 'engine': {
-                this.lanesUsed.add(m.lane);
-                const params = { ...m.params };
-                if (m.method === 'query' || m.method === 'page' || m.method === 'export') {
-                    const name = this.resultName(params.name);
-                    params.name = name;
-                    if (m.method === 'query') { this.resultNames.add(name); }
-                }
-                const reply = await this.engine.request(m.method, params, this.session(m.lane)).catch(err => ({
-                    ok: false as const, error: { kind: 'crashed' as const, message: String(err instanceof Error ? err.message : err) },
-                }));
-                this.post({ type: 'reply', rid: m.rid, reply });
+            case 'engine':
+                this.post({ type: 'reply', rid: m.rid, reply: await this.lanes.request(m.lane, m.method, m.params) });
                 break;
-            }
             case 'cancel':
-                await Promise.all(m.lanes.map(lane => this.engine.request('cancel', {}, this.session(lane)).catch(() => undefined)));
+                await this.lanes.cancel(m.lanes);
                 break;
             case 'openTable':
                 if (this.source.kind === 'file') {
@@ -129,6 +107,9 @@ export class DataView implements EngineClient, vscode.Disposable {
             case 'copy':
                 await vscode.env.clipboard.writeText(m.text);
                 vscode.window.setStatusBarMessage(`Copied ${m.what}`, 3000);
+                break;
+            case 'newFlow':
+                if (this.source.kind === 'file') { await vscode.commands.executeCommand('queryDataFiles.newFlow', this.source.uri); }
                 break;
             case 'error':
                 vscode.window.showErrorMessage(m.message);
@@ -167,8 +148,7 @@ export class DataView implements EngineClient, vscode.Disposable {
             return;
         }
         await this.engine.allow(file).catch(() => undefined);
-        const reply = await this.engine.request('open', { path: file, format, table, sheet }, this.session('main'))
-            .catch(err => ({ ok: false as const, error: { kind: 'crashed' as const, message: String(err instanceof Error ? err.message : err) } }));
+        const reply = await this.lanes.request('main', 'open', { path: file, format, table, sheet });
         if (!reply.ok) {
             this.problem = reply.error.message;
             this.file = { name: path.basename(file), path: file, format, source: null };
@@ -207,7 +187,7 @@ export class DataView implements EngineClient, vscode.Disposable {
         if (!target) { return; }
         const scratch = path.join(this.engine.scratchDir(), `${crypto.randomUUID()}.${format}`);
         await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Exporting ${rows.toLocaleString()} rows…` }, async () => {
-            const reply = await this.engine.request('export', { name: this.resultName(name), format, path: scratch }, this.session('page'));
+            const reply = await this.lanes.request('page', 'export', { name, format, path: scratch });
             if (!reply.ok) {
                 vscode.window.showErrorMessage(`Export failed: ${reply.error.message}`);
                 return;
@@ -251,12 +231,6 @@ export class DataView implements EngineClient, vscode.Disposable {
         if (this.disposed) { return; }
         this.disposed = true;
         clearTimeout(this.changeTimer);
-        const names = [...this.resultNames];
-        this.lanesUsed.add('page');
-        if (names.length) { void this.engine.request('drop', { names }, this.session('page')).catch(() => undefined); }
-        for (const lane of this.lanesUsed) {
-            void this.engine.request('close', {}, this.session(lane)).catch(() => undefined);
-        }
         for (const d of this.disposables) { d.dispose(); }
     }
 }

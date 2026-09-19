@@ -3,6 +3,7 @@ import * as path from 'path';
 import { DataEditorProvider } from './dataEditor';
 import { DataFilesProvider, Node, starterQuery } from './dataFiles';
 import { Engine } from './engine';
+import { FlowEditorProvider, newFlow } from './flowEditor';
 import { SqlRunner } from './sqlRunner';
 
 const TEXT_FORMATS = new Set(['.csv', '.tsv', '.json', '.jsonl', '.ndjson', '.db']);
@@ -29,6 +30,8 @@ export function activate(context: vscode.ExtensionContext) {
             return vscode.commands.executeCommand('vscode.openWith', target, viewType);
         }),
         vscode.commands.registerCommand('queryDataFiles.restartEngine', () => engine.restart()),
+        vscode.window.registerCustomEditorProvider(FlowEditorProvider.viewType, new FlowEditorProvider(context, engine), { webviewOptions: { retainContextWhenHidden: true } }),
+        vscode.commands.registerCommand('queryDataFiles.newFlow', (arg?: vscode.Uri | Node) => newFlow(arg instanceof vscode.Uri ? arg : arg?.kind === 'file' || arg?.kind === 'table' ? arg.uri : undefined)),
         runner,
         files,
         vscode.window.registerTreeDataProvider('queryDataFiles.files', files),

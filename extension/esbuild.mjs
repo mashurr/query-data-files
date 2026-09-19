@@ -24,7 +24,7 @@ const contexts = await Promise.all([
     // Webview code runs in the editor's browser frame
     esbuild.context({
         ...shared,
-        entryPoints: { data: 'webview/data/main.ts' },
+        entryPoints: { data: 'webview/data/main.ts', flow: 'webview/flow/main.ts' },
         outdir: 'out',
         platform: 'browser',
         format: 'iife',

@@ -18,6 +18,7 @@ const MAX_AUTO_WIDTH = 360;
 export const PAGE_ROWS = 200;
 const OVERSCAN_ROWS = 12;
 const OVERSCAN_PX = 300;
+const MAX_PAINTED_ROWS = 400;
 
 export interface GridData {
     columns: Column[];
@@ -212,7 +213,8 @@ export class Grid {
         if (!data) { this.body.replaceChildren(); return; }
         const top = Math.max(0, this.scroller.scrollTop - this.headerHeight());
         const first = Math.max(0, Math.floor(top / ROW_HEIGHT) - OVERSCAN_ROWS);
-        const last = Math.min(data.rows, Math.ceil((top + this.scroller.clientHeight) / ROW_HEIGHT) + OVERSCAN_ROWS);
+        // Capped in case the grid's box isn't sized yet and reports its full content height
+        const last = Math.min(data.rows, Math.ceil((top + this.scroller.clientHeight) / ROW_HEIGHT) + OVERSCAN_ROWS, first + MAX_PAINTED_ROWS);
         const columns = this.visibleColumns();
         const rows: HTMLElement[] = [];
         for (let r = first; r < last; r++) {

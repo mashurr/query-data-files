@@ -31,7 +31,16 @@ export function onHostMessage(handler: (m: HostMessage) => void) {
     listener = handler;
 }
 
+/** For webviews with their own message types (the query builder) */
+export function onRawMessage(handler: (m: { type: string }) => void) {
+    listener = handler as (m: HostMessage) => void;
+}
+
 export function post(message: ViewMessage) {
+    api.postMessage(message);
+}
+
+export function postRaw(message: { type: string }) {
     api.postMessage(message);
 }
 

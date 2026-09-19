@@ -92,10 +92,11 @@ function blobText(bytes: Uint8Array): string {
     return bytes.length > 64 ? `${text}…` : text;
 }
 
+/** Doubles to 15 significant digits, like spreadsheets, so sums don't show float noise (0.1 + 0.2) */
 function floatText(v: number): string {
     if (Number.isNaN(v)) { return 'nan'; }
     if (!Number.isFinite(v)) { return v > 0 ? 'inf' : '-inf'; }
-    return String(v);
+    return String(Number(v.toPrecision(15)));
 }
 
 /** Text for one value, `nested` quoting strings the way DuckDB prints lists and structs */

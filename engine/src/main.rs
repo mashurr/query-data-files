@@ -55,15 +55,9 @@ fn run_flow(path: &Path) -> Result<(), String> {
         std::fs::read_to_string(path).map_err(|e| format!("Can't read {}: {e}", path.display()))?;
     let flow: serde_json::Value = serde_json::from_str(&text)
         .map_err(|e| format!("{} isn't valid JSON: {e}", path.display()))?;
-    let exports: Vec<(&str, &str)> = flow["outputs"]
+    let exports: Vec<&serde_json::Value> = flow["outputs"]
         .as_array()
-        .map(|outputs| {
-            outputs
-                .iter()
-                .filter(|o| o["kind"] == "export")
-                .filter_map(|o| Some((o["step"].as_str().unwrap_or("export"), o["sql"].as_str()?)))
-                .collect()
-        })
+        .map(|outputs| outputs.iter().filter(|o| o["kind"] == "export").collect())
         .unwrap_or_default();
     if exports.is_empty() {
         return Err(format!("{} has no Export steps to run.", path.display()));
@@ -86,7 +80,28 @@ fn run_flow(path: &Path) -> Result<(), String> {
     for name in ["sqlite_scanner", "excel"] {
         let _ = conn.execute_batch(&format!("LOAD {name}"));
     }
-    for (step, sql) in exports {
+    for output in exports {
+        let step = output["step"].as_str().unwrap_or("export");
+        // ATTACH statements for DuckDB database sources come first
+        for setup in output["setup"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|s| s.as_str())
+        {
+            conn.execute_batch(setup)
+                .map_err(|e| format!("{step}: {e}"))?;
+        }
+        let sql = output["sql"].as_str().ok_or(format!(
+            "{step} has no SQL; open the flow in VS Code and save it"
+        ))?;
+        // DuckDB won't create the folder it writes into
+        if let Some(parent) = output["file"].as_str().and_then(|f| Path::new(f).parent())
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("{step}: can't create {}: {e}", parent.display()))?;
+        }
         let rows = conn.execute(sql, []).map_err(|e| format!("{step}: {e}"))?;
         println!("{step}: wrote {rows} rows");
     }

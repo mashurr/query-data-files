@@ -336,6 +336,12 @@ fn handle(conn: &Connection, request: &Request, attached: &Mutex<Attached>) -> R
             let columns = describe(conn, &format!("(\n{sql}\n)"))?;
             Ok((json!({ "columns": columns }), Vec::new()))
         }
+        "execute" => {
+            let sql = str_param(p, "sql")?;
+            check_user_statement(sql).map_err(bad_request)?;
+            let changed = conn.execute(trim_statement(sql), [])?;
+            Ok((json!({ "changed": changed }), Vec::new()))
+        }
         "ping" => Ok((json!({}), Vec::new())),
         other => Err(bad_request(format!("Unknown method {other}"))),
     }

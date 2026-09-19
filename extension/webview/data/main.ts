@@ -48,6 +48,7 @@ class App {
     private readonly picker = h('select', { className: 'picker', 'aria-label': 'Table' });
     private readonly meta = h('span', { className: 'meta' });
     private readonly exportButton = h('button', { className: 'secondary', text: 'Export ▾', title: 'Save or copy the result' });
+    private readonly flowButton = h('button', { className: 'secondary', text: 'Open in Query Builder', title: 'Start a query flow that reads this file' });
     private readonly sqlBox = h('textarea', { className: 'sql', spellcheck: 'false', 'aria-label': 'SQL query', rows: 1 });
     private readonly runButton = h('button', { className: 'primary', text: 'Run', title: 'Run the query (Ctrl+Enter)' });
     private readonly status = h('span', { className: 'status', role: 'status', 'aria-live': 'polite' });
@@ -61,7 +62,7 @@ class App {
 
     constructor(root: HTMLElement) {
         root.append(
-            h('div', { className: 'toolbar' }, this.title, this.picker, this.meta, h('span', { className: 'spacer' }), this.exportButton),
+            h('div', { className: 'toolbar' }, this.title, this.picker, this.meta, h('span', { className: 'spacer' }), this.flowButton, this.exportButton),
             h('div', { className: 'sqlbar' }, this.sqlBox, h('div', { className: 'run' }, this.runButton, this.status)),
             this.chips,
             this.message,
@@ -88,6 +89,7 @@ class App {
             post(this.file?.format === 'xlsx' ? { type: 'openTable', sheet: value } : { type: 'openTable', table: value });
         });
         this.exportButton.addEventListener('click', e => this.exportMenu(e.currentTarget as HTMLElement));
+        this.flowButton.addEventListener('click', () => post({ type: 'newFlow' }));
         onHostMessage(m => this.receive(m));
         post({ type: 'ready' });
     }
@@ -96,6 +98,7 @@ class App {
         switch (m.type) {
             case 'init': {
                 this.kind = m.kind;
+                this.flowButton.hidden = m.kind !== 'file';
                 this.title.textContent = m.title;
                 this.key = m.file?.path ?? m.title;
                 this.setFile(m.file);

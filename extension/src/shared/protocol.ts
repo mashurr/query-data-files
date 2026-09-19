@@ -45,7 +45,7 @@ export interface OpenedFile {
 }
 
 /** Separate engine connections for one view, so paging never waits behind a slow query */
-export type Lane = 'main' | 'peek' | 'page' | 'profile' | 'chart' | 'diff';
+export type Lane = 'main' | 'peek' | 'page' | 'profile' | 'chart' | 'diff' | 'describe' | 'meta' | 'export';
 
 export type ViewMessage =
     | { type: 'ready' }
@@ -54,6 +54,7 @@ export type ViewMessage =
     | { type: 'openTable'; table?: string; sheet?: string }
     | { type: 'export'; format: 'csv' | 'parquet' | 'json' | 'xlsx'; name: string; rows: number }
     | { type: 'copy'; text: string; what: string }
+    | { type: 'newFlow' }
     | { type: 'error'; message: string };
 
 export interface ViewInit {
@@ -72,3 +73,25 @@ export type HostMessage =
     | { type: 'opened'; file?: OpenedFile; problem?: string }
     | { type: 'reset' }
     | { type: 'run'; sql: string };
+
+/** Messages from the query builder webview */
+export type FlowViewMessage =
+    | { type: 'ready' }
+    | { type: 'engine'; rid: number; lane: Lane; method: string; params: Record<string, unknown> }
+    | { type: 'cancel'; lanes: Lane[] }
+    /** The whole document text after an edit in the builder */
+    | { type: 'edit'; text: string }
+    | { type: 'pickFile'; rid: number }
+    | { type: 'sourceInfo'; rid: number; file: string }
+    | { type: 'runExport'; rid: number; setup: string[]; sql: string; file: string }
+    | { type: 'openSql'; sql: string }
+    | { type: 'copy'; text: string; what: string };
+
+export type FlowHostMessage =
+    | { type: 'init'; text: string; name: string; folder: string; separator: string; trusted: boolean }
+    /** The document changed outside the builder (undo, redo, a text editor) */
+    | { type: 'text'; text: string }
+    | { type: 'reply'; rid: number; reply: EngineReply }
+    | { type: 'picked'; rid: number; file?: string }
+    | { type: 'sourceInfo'; rid: number; tables?: string[]; sheets?: string[]; error?: string }
+    | { type: 'exported'; rid: number; ok: boolean };
