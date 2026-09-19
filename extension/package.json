@@ -1,0 +1,119 @@
+{
+  "name": "query-data-files",
+  "displayName": "Query Data Files",
+  "description": "Query CSV, Parquet, JSON, SQLite and Excel files with SQL, a visual query builder or charts. Powered by DuckDB.",
+  "version": "0.0.1",
+  "publisher": "mashurr",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mashurr/query-data-files.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Data Science",
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "csv",
+    "parquet",
+    "sqlite",
+    "excel",
+    "sql",
+    "duckdb",
+    "data",
+    "query",
+    "table viewer",
+    "chart"
+  ],
+  "main": "./out/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Data files open for viewing. Queries from .sql files and saved query flows only run once you trust the workspace."
+    }
+  },
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "queryDataFiles.data",
+        "displayName": "Query Data Files",
+        "selector": [
+          { "filenamePattern": "*.parquet" },
+          { "filenamePattern": "*.xlsx" },
+          { "filenamePattern": "*.sqlite" },
+          { "filenamePattern": "*.sqlite3" },
+          { "filenamePattern": "*.duckdb" }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "queryDataFiles.text",
+        "displayName": "Query Data Files",
+        "selector": [
+          { "filenamePattern": "*.csv" },
+          { "filenamePattern": "*.tsv" },
+          { "filenamePattern": "*.json" },
+          { "filenamePattern": "*.jsonl" },
+          { "filenamePattern": "*.ndjson" },
+          { "filenamePattern": "*.db" }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "queryDataFiles.open",
+        "title": "Open in Query Data Files",
+        "category": "Query Data Files",
+        "icon": "$(table)"
+      },
+      {
+        "command": "queryDataFiles.restartEngine",
+        "title": "Restart Engine",
+        "category": "Query Data Files"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "queryDataFiles.open",
+          "when": "resourceExtname =~ /^\\.(csv|tsv|json|jsonl|ndjson|db)$/ && activeCustomEditorId != queryDataFiles.text",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "queryDataFiles.open",
+          "when": "resourceExtname =~ /^\\.(csv|tsv|json|jsonl|ndjson|db|parquet|xlsx|sqlite|sqlite3|duckdb)$/",
+          "group": "navigation@9"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "queryDataFiles.open",
+          "when": "resourceExtname =~ /^\\.(csv|tsv|json|jsonl|ndjson|db|parquet|xlsx|sqlite|sqlite3|duckdb)$/"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run typecheck && node esbuild.mjs --production",
+    "compile": "npm run typecheck && node esbuild.mjs",
+    "typecheck": "tsc -p . && tsc -p webview",
+    "watch": "node esbuild.mjs --watch",
+    "lint": "eslint src webview"
+  },
+  "devDependencies": {
+    "@types/node": "20.x",
+    "@types/vscode": "^1.90.0",
+    "@uwdata/flechette": "^2.5.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^9.25.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.0"
+  }
+}
