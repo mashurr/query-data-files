@@ -5,8 +5,8 @@ import { ident, trimStatement } from '../shared/sqltext';
 
 export interface Filter {
     column: string;
-    op: '=' | '!=' | 'is null' | 'is not null';
-    /** SQL literal for = and != */
+    op: '=' | '!=' | 'is null' | 'is not null' | 'sql';
+    /** SQL literal for = and !=, or the whole condition for sql (from clicking a chart) */
     value?: string;
     /** Value as shown in the grid, for the chip */
     label?: string;
@@ -33,6 +33,7 @@ function condition(f: Filter): string {
         case 'is not null': return `${col} IS NOT NULL`;
         case '=': return `${col} = ${f.value}`;
         case '!=': return `${col} IS DISTINCT FROM ${f.value}`;
+        case 'sql': return `(${f.value})`;
     }
 }
 
@@ -57,5 +58,6 @@ export function describe(f: Filter): string {
         case 'is not null': return `${f.column} is not NULL`;
         case '=': return `${f.column} = ${f.label ?? f.value}`;
         case '!=': return `${f.column} ≠ ${f.label ?? f.value}`;
+        case 'sql': return f.label ?? f.value ?? '';
     }
 }

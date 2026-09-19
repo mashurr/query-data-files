@@ -7,17 +7,22 @@ import { showMenu } from '../shared/menu';
 import { cancel, engine, loadState, onHostMessage, post, saveState } from '../shared/rpc';
 import { trimStatement, valueLiteral } from '../shared/sqltext';
 import { Decoded, decode, formatValue } from '../shared/values';
+import { ChartSettings, ChartView, Pick } from './chart';
 import { CellRef, Grid, PAGE_ROWS } from './grid';
-import { computeProfiles, resultTable } from './profile';
+import { Profile, computeProfiles, resultTable } from './profile';
 import { Filter, Refinements, compose, describe, noRefinements } from './refine';
 
 const DEFAULT_SQL = 'SELECT * FROM this';
 const COPY_ROWS = 1000;
 
+type View = 'table' | 'chart';
+
 interface Saved {
     key: string;
     base: string;
     refine: Refinements;
+    view?: View;
+    chart?: ChartSettings;
 }
 
 interface Shown {
@@ -35,6 +40,9 @@ class App {
     private running = false;
     private token = 0;
     private timer = 0;
+    private view: View = 'table';
+    private chartSettings: ChartSettings = { type: 'auto' };
+    private profiles: (Profile | undefined)[] = [];
 
     private readonly title = h('span', { className: 'title' });
     private readonly picker = h('select', { className: 'picker', 'aria-label': 'Table' });
@@ -45,8 +53,11 @@ class App {
     private readonly status = h('span', { className: 'status', role: 'status', 'aria-live': 'polite' });
     private readonly chips = h('div', { className: 'chips' });
     private readonly message = h('div', { className: 'message', hidden: true });
-    private readonly gridHost = h('div', { className: 'content' });
+    private readonly tabs = h('div', { className: 'tabs', role: 'tablist', 'aria-label': 'View' });
+    private readonly gridHost = h('div', { className: 'content', role: 'tabpanel' });
+    private readonly chartHost = h('div', { className: 'content', role: 'tabpanel', hidden: true });
     private readonly grid: Grid;
+    private readonly chart: ChartView;
 
     constructor(root: HTMLElement) {
         root.append(
@@ -54,8 +65,12 @@ class App {
             h('div', { className: 'sqlbar' }, this.sqlBox, h('div', { className: 'run' }, this.runButton, this.status)),
             this.chips,
             this.message,
+            this.tabs,
             this.gridHost,
+            this.chartHost,
         );
+        this.chart = new ChartView(this.chartHost, settings => this.setChart(settings), pick => this.pick(pick));
+        this.renderTabs();
         this.picker.hidden = true;
         this.grid = new Grid(this.gridHost, {
             headerClick: col => this.cycleSort(col),
@@ -88,6 +103,9 @@ class App {
                 if (saved && saved.key === this.key && m.kind === 'file') {
                     this.base = saved.base;
                     this.refine = saved.refine;
+                    this.view = saved.view ?? 'table';
+                    this.chartSettings = saved.chart ?? { type: 'auto' };
+                    this.renderTabs();
                 } else {
                     this.base = m.sql;
                     this.refine = noRefinements();
@@ -154,7 +172,7 @@ class App {
     }
 
     private save() {
-        saveState({ key: this.key, base: this.base, refine: this.refine } satisfies Saved);
+        saveState({ key: this.key, base: this.base, refine: this.refine, view: this.view, chart: this.chartSettings } satisfies Saved);
     }
 
     /** Runs whatever is in the SQL box; it becomes the new base query */
@@ -279,13 +297,60 @@ class App {
         this.status.textContent = `${formatMs(result.ms)}${result.truncated ? ` · first ${formatCount(decoded.rows)} rows shown` : ''}`;
         this.exportButton.disabled = result.direct;
 
+        this.profiles = [];
+        if (!sameColumns) { this.chartSettings = { type: 'auto' }; }
+        if (this.view === 'chart') { this.showChart(); }
         if (!result.direct && result.rows > 0 && result.name) {
             this.grid.setProfiles([]);
             const profiles = await computeProfiles(resultTable(result.name), result.columns, result.rows);
-            if (token === this.token && profiles) { this.grid.setProfiles(profiles); }
+            if (token === this.token && profiles) {
+                this.profiles = profiles;
+                this.grid.setProfiles(profiles);
+            }
         } else {
             this.grid.setProfiles([]);
         }
+    }
+
+    private renderTabs() {
+        const tab = (view: View, label: string) => {
+            const button = h('button', { role: 'tab', 'aria-selected': String(this.view === view), className: this.view === view ? 'active' : '', text: label });
+            button.addEventListener('click', () => this.setView(view));
+            return button;
+        };
+        this.tabs.replaceChildren(tab('table', 'Table'), tab('chart', 'Chart'));
+        this.gridHost.hidden = this.view !== 'table';
+        this.chartHost.hidden = this.view !== 'chart';
+    }
+
+    private setView(view: View) {
+        if (view === this.view) { return; }
+        this.view = view;
+        this.renderTabs();
+        this.save();
+        if (view === 'chart') { this.showChart(); }
+    }
+
+    private setChart(settings: ChartSettings) {
+        this.chartSettings = settings;
+        this.save();
+        this.showChart();
+    }
+
+    private showChart() {
+        const shown = this.shown;
+        if (!shown) { return; }
+        cancel('chart');
+        const table = shown.result.direct || !shown.result.name ? null : resultTable(shown.result.name);
+        void this.chart.show(this.chartSettings, shown.result.columns, this.profiles, table, shown.result.rows);
+    }
+
+    /** A clicked bar or point: show its rows in the table */
+    private pick(pick: Pick) {
+        this.refine.filters.push({ column: '', op: 'sql', value: pick.condition, label: pick.label });
+        this.view = 'table';
+        this.renderTabs();
+        void this.run();
     }
 
     private async fetchPage(offset: number): Promise<Decoded | undefined> {
