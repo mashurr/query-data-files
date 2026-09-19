@@ -9,8 +9,8 @@ import { Decoded, formatValue, isNumericType } from '../shared/values';
 import { Profile, renderProfile } from './profile';
 
 const ROW_HEIGHT = 22;
-const HEADER_HEIGHT = 30;
-const PROFILE_HEIGHT = 42;
+const HEADER_HEIGHT = 38;
+const PROFILE_HEIGHT = 36;
 const NUMBER_WIDTH = 64;
 const MIN_WIDTH = 48;
 const MIN_PROFILE_WIDTH = 104;
@@ -30,6 +30,10 @@ export interface GridData {
     first: Decoded;
     /** Omitted when every row is already in `first` */
     fetch?: (offset: number) => Promise<Decoded | undefined>;
+    /** This many leading columns carry data for `decorate` and aren't shown */
+    hidden?: number;
+    /** Styles a row and its cells after they're filled, e.g. to mark changes */
+    decorate?: (row: HTMLElement, cells: Map<number, HTMLElement>, value: (column: number) => unknown) => void;
 }
 
 export interface CellRef {
@@ -96,7 +100,7 @@ export class Grid {
         this.pages.clear();
         this.pages.set(0, { columns: data.first.columns });
         if (!sameColumns) {
-            this.widths = data.columns.map((c, i) => this.autoWidth(c, data.types[i], data.first.columns[i] ?? []));
+            this.widths = data.columns.map((c, i) => i < (data.hidden ?? 0) ? 0 : this.autoWidth(c, data.types[i], data.first.columns[i] ?? []));
             this.profiles = [];
             this.selected = undefined;
             this.scroller.scrollTop = 0;
@@ -208,7 +212,7 @@ export class Grid {
         const right = this.scroller.scrollLeft + this.scroller.clientWidth + OVERSCAN_PX;
         const out: number[] = [];
         for (let i = 0; i < this.widths.length; i++) {
-            if (this.offsets[i] + this.widths[i] >= left && this.offsets[i] <= right) { out.push(i); }
+            if (this.widths[i] && this.offsets[i] + this.widths[i] >= left && this.offsets[i] <= right) { out.push(i); }
         }
         return out;
     }
@@ -257,6 +261,7 @@ export class Grid {
             const page = this.page(r);
             const row = h('div', { className: 'row', role: 'row', 'data-row': r, style: `top:${this.rowY(r)}px` },
                 h('div', { className: 'cell number', text: (r + 1).toLocaleString('en-US') }));
+            const cells = new Map<number, HTMLElement>();
             for (const c of columns) {
                 const cell = h('div', {
                     className: 'cell', role: 'gridcell', 'data-col': c,
@@ -271,6 +276,10 @@ export class Grid {
                 }
                 if (this.selected?.row === r && this.selected.column === c) { cell.classList.add('selected'); }
                 row.append(cell);
+                cells.set(c, cell);
+            }
+            if (data.decorate && typeof page === 'object') {
+                data.decorate(row, cells, column => page.columns[column]?.[r % PAGE_ROWS]);
             }
             rows.push(row);
         }

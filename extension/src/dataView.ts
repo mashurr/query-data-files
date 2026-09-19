@@ -4,8 +4,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Engine, EngineClient } from './engine';
 import { formatOf } from './formats';
-import { HostMessage, OpenedFile, ViewInit, ViewMessage } from './shared/protocol';
+import { Column, HostMessage, OpenedFile, ViewInit, ViewMessage } from './shared/protocol';
 import { ViewEngine } from './viewEngine';
+import { extract, pickRevision } from './git';
 
 // Changes on disk are picked up once the file has been quiet this long
 const DISK_CHANGE_MS = 500;
@@ -24,6 +25,8 @@ export type ViewSource =
 /** One table view in a webview: a data file opened as `this`, or the results of a .sql file */
 export class DataView implements EngineClient, vscode.Disposable {
     private readonly lanes: ViewEngine;
+    /** Earlier versions extracted for comparing, deleted with the view */
+    private readonly scratch: string[] = [];
     private file: OpenedFile | undefined;
     private problem: string | undefined;
     private ready = false;
@@ -108,6 +111,9 @@ export class DataView implements EngineClient, vscode.Disposable {
                 await vscode.env.clipboard.writeText(m.text);
                 vscode.window.setStatusBarMessage(`Copied ${m.what}`, 3000);
                 break;
+            case 'compare':
+                await this.compare();
+                break;
             case 'newFlow':
                 if (this.source.kind === 'file') { await vscode.commands.executeCommand('queryDataFiles.newFlow', this.source.uri); }
                 break;
@@ -160,6 +166,28 @@ export class DataView implements EngineClient, vscode.Disposable {
             name: path.basename(file), path: file, format, source: (r.source as string | null) ?? null,
             tables: r.tables, table: r.table, sheets: r.sheets, sheet: r.sheet, alias: r.alias,
         };
+    }
+
+    /** Opens an earlier git version of the file next to the current one, for the webview to compare */
+    private async compare() {
+        if (this.source.kind !== 'file' || !this.file) { return; }
+        const file = this.source.uri.fsPath;
+        try {
+            const revision = await pickRevision(file);
+            if (!revision) { return; }
+            const old = path.join(this.engine.scratchDir(), `${crypto.randomUUID()}${path.extname(file)}`);
+            this.scratch.push(old);
+            await extract(file, revision.rev, old);
+            const reply = await this.lanes.request('diff', 'open', { path: old, format: this.file.format, table: this.file.table, sheet: this.file.sheet });
+            if (!reply.ok) { throw new Error(`That version can't be read: ${reply.error.message}`); }
+            const source = reply.result.source as string | null;
+            if (!source) { throw new Error(`That version has no ${this.file.table ? `table ${this.file.table}` : 'data'}.`); }
+            const described = await this.lanes.request('diff', 'describe', { sql: `SELECT * FROM ${source}` });
+            if (!described.ok) { throw new Error(described.error.message); }
+            this.post({ type: 'compareWith', label: revision.label, source, columns: described.result.columns as Column[] });
+        } catch (err) {
+            this.post({ type: 'compareFailed', message: err instanceof Error ? err.message : String(err) });
+        }
     }
 
     /** After an engine restart or a change on disk: open the file again and re-run the query */
@@ -233,5 +261,6 @@ export class DataView implements EngineClient, vscode.Disposable {
         this.disposed = true;
         clearTimeout(this.changeTimer);
         for (const d of this.disposables) { d.dispose(); }
+        for (const file of this.scratch) { fs.rm(file, { force: true }, () => undefined); }
     }
 }

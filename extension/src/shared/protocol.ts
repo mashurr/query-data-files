@@ -55,6 +55,7 @@ export type ViewMessage =
     | { type: 'export'; format: 'csv' | 'parquet' | 'json' | 'xlsx'; name: string; rows: number }
     | { type: 'copy'; text: string; what: string }
     | { type: 'newFlow' }
+    | { type: 'compare' }
     | { type: 'error'; message: string };
 
 export interface ViewInit {
@@ -72,7 +73,10 @@ export type HostMessage =
     | { type: 'reply'; rid: number; reply: EngineReply }
     | { type: 'opened'; file?: OpenedFile; problem?: string }
     | { type: 'reset' }
-    | { type: 'run'; sql: string };
+    | { type: 'run'; sql: string }
+    /** An earlier version of the file, opened for comparison */
+    | { type: 'compareWith'; label: string; source: string; columns: Column[] }
+    | { type: 'compareFailed'; message: string };
 
 /** Messages from the query builder webview */
 export type FlowViewMessage =

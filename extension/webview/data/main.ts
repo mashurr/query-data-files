@@ -8,6 +8,7 @@ import { cancel, engine, loadState, onHostMessage, post, saveState } from '../sh
 import { trimStatement, valueLiteral } from '../shared/sqltext';
 import { Decoded, decode, formatValue } from '../shared/values';
 import { ChartSettings, ChartView, Pick } from './chart';
+import { DiffView } from './diff';
 import { CellRef, Grid, PAGE_ROWS } from './grid';
 import { Profile, computeProfiles, resultTable } from './profile';
 import { Filter, Refinements, compose, describe, noRefinements } from './refine';
@@ -15,7 +16,7 @@ import { Filter, Refinements, compose, describe, noRefinements } from './refine'
 const DEFAULT_SQL = 'SELECT * FROM this';
 const COPY_ROWS = 1000;
 
-type View = 'table' | 'chart';
+type View = 'table' | 'chart' | 'changes';
 
 interface Saved {
     key: string;
@@ -49,6 +50,7 @@ class App {
     private readonly meta = h('span', { className: 'meta' });
     private readonly exportButton = h('button', { className: 'secondary', text: 'Export ▾', title: 'Save or copy the result' });
     private readonly flowButton = h('button', { className: 'secondary', text: 'Open in Query Builder', title: 'Start a query flow that reads this file' });
+    private readonly compareButton = h('button', { className: 'secondary', text: 'Compare with Git…', title: 'See rows added, removed and changed since an earlier commit' });
     private readonly sqlBox = h('textarea', { className: 'sql', spellcheck: 'false', 'aria-label': 'SQL query', rows: 1 });
     private readonly runButton = h('button', { className: 'primary', text: 'Run', title: 'Run the query (Ctrl+Enter)' });
     private readonly status = h('span', { className: 'status', role: 'status', 'aria-live': 'polite' });
@@ -57,19 +59,23 @@ class App {
     private readonly tabs = h('div', { className: 'tabs', role: 'tablist', 'aria-label': 'View' });
     private readonly gridHost = h('div', { className: 'content', role: 'tabpanel' });
     private readonly chartHost = h('div', { className: 'content', role: 'tabpanel', hidden: true });
+    private readonly diffHost = h('div', { className: 'content', role: 'tabpanel', hidden: true });
+    private readonly diff: DiffView;
     private readonly grid: Grid;
     private readonly chart: ChartView;
 
     constructor(root: HTMLElement) {
         root.append(
-            h('div', { className: 'toolbar' }, this.title, this.picker, this.meta, h('span', { className: 'spacer' }), this.flowButton, this.exportButton),
+            h('div', { className: 'toolbar' }, this.title, this.picker, this.meta, h('span', { className: 'spacer' }), this.compareButton, this.flowButton, this.exportButton),
             h('div', { className: 'sqlbar' }, this.sqlBox, h('div', { className: 'run' }, this.runButton, this.status)),
             this.chips,
             this.message,
             this.tabs,
             this.gridHost,
             this.chartHost,
+            this.diffHost,
         );
+        this.diff = new DiffView(this.diffHost, () => this.stopComparing(), text => this.showProblem(text));
         this.chart = new ChartView(this.chartHost, settings => this.setChart(settings), pick => this.pick(pick));
         this.renderTabs();
         this.picker.hidden = true;
@@ -90,6 +96,11 @@ class App {
         });
         this.exportButton.addEventListener('click', e => this.exportMenu(e.currentTarget as HTMLElement));
         this.flowButton.addEventListener('click', () => post({ type: 'newFlow' }));
+        this.compareButton.addEventListener('click', () => {
+            this.compareButton.disabled = true;
+            this.compareButton.textContent = 'Opening…';
+            post({ type: 'compare' });
+        });
         onHostMessage(m => this.receive(m));
         post({ type: 'ready' });
     }
@@ -99,6 +110,7 @@ class App {
             case 'init': {
                 this.kind = m.kind;
                 this.flowButton.hidden = m.kind !== 'file';
+                this.compareButton.hidden = m.kind !== 'file';
                 this.title.textContent = m.title;
                 this.key = m.file?.path ?? m.title;
                 this.setFile(m.file);
@@ -136,6 +148,15 @@ class App {
             }
             case 'reset':
                 void this.run();
+                if (this.diff.active && this.file?.source) { void this.refreshComparison(this.file.source); }
+                break;
+            case 'compareWith':
+                this.resetCompareButton();
+                if (this.file?.source) { void this.startComparing(m.label, m.source, m.columns, this.file.source); }
+                break;
+            case 'compareFailed':
+                this.resetCompareButton();
+                this.showProblem(m.message);
                 break;
             case 'run':
                 this.base = m.sql;
@@ -172,7 +193,7 @@ class App {
     }
 
     private save() {
-        saveState({ key: this.key, base: this.base, refine: this.refine, view: this.view, chart: this.chartSettings } satisfies Saved);
+        saveState({ key: this.key, base: this.base, refine: this.refine, view: this.view === 'changes' ? 'table' : this.view, chart: this.chartSettings } satisfies Saved);
     }
 
     /** Runs whatever is in the SQL box; it becomes the new base query */
@@ -312,15 +333,42 @@ class App {
         }
     }
 
+    private resetCompareButton() {
+        this.compareButton.disabled = false;
+        this.compareButton.textContent = 'Compare with Git…';
+    }
+
+    private async startComparing(label: string, oldSource: string, oldColumns: Column[], newSource: string) {
+        const described = await engine('diff', 'describe', { sql: `SELECT * FROM ${newSource}` });
+        if (!described.ok) { this.showProblem(described.error.message); return; }
+        this.hideMessage();
+        this.view = 'changes';
+        const start = this.diff.start({ label, oldSource, oldColumns, newSource, newColumns: described.result.columns as Column[] });
+        this.renderTabs();
+        await start;
+    }
+
+    private async refreshComparison(newSource: string) {
+        const described = await engine('diff', 'describe', { sql: `SELECT * FROM ${newSource}` });
+        if (described.ok) { await this.diff.refresh(newSource, described.result.columns as Column[]); }
+    }
+
+    private stopComparing() {
+        this.diff.clear();
+        this.view = 'table';
+        this.renderTabs();
+    }
+
     private renderTabs() {
         const tab = (view: View, label: string) => {
             const button = h('button', { role: 'tab', 'aria-selected': String(this.view === view), className: this.view === view ? 'active' : '', text: label });
             button.addEventListener('click', () => this.setView(view));
             return button;
         };
-        this.tabs.replaceChildren(tab('table', 'Table'), tab('chart', 'Chart'));
+        this.tabs.replaceChildren(tab('table', 'Table'), tab('chart', 'Chart'), ...(this.diff?.active ? [tab('changes', 'Changes')] : []));
         this.gridHost.hidden = this.view !== 'table';
         this.chartHost.hidden = this.view !== 'chart';
+        this.diffHost.hidden = this.view !== 'changes';
     }
 
     private setView(view: View) {
